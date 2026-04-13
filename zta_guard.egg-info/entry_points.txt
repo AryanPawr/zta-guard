@@ -1,0 +1,2 @@
+[console_scripts]
+zta = cli.main:main
