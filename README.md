@@ -118,7 +118,7 @@ zta-guard/
 
 ## Roadmap
 
-### Phase 1.5 — Refinement
+### Phase 1.5 — Refinement (Ongoing)
 
 * Improve scoring normalization
 * Reduce redundant checks
