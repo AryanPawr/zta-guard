@@ -18,6 +18,7 @@ Design decisions
 
 Usage examples
     zta scan --path ./my-service
+    zta scan https://api.example.com
     zta scan --path . --target-url http://localhost:3000
     zta scan --path . --target-url https://api.example.com
     zta export-metrics --path .
@@ -28,7 +29,6 @@ Usage examples
 from __future__ import annotations
 
 import argparse
-import sys
 
 from core.orchestrator import export_metrics, run_scan
 
@@ -36,6 +36,33 @@ from core.orchestrator import export_metrics, run_scan
 # ─────────────────────────────────────────────────────────────────────────────
 # PARSER FACTORY
 # ─────────────────────────────────────────────────────────────────────────────
+
+class ZTAGuardArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser with ZTA Guard-specific cross-argument validation."""
+
+    def parse_args(self, args=None, namespace=None):
+        parsed = super().parse_args(args, namespace)
+
+        positional_url = getattr(parsed, "target_url_positional", None)
+        option_url = getattr(parsed, "target_url", None)
+
+        if positional_url and option_url:
+            self.error("provide target URL either positionally or with --target-url, not both")
+
+        if positional_url:
+            parsed.target_url = positional_url
+
+        if hasattr(parsed, "target_url_positional"):
+            delattr(parsed, "target_url_positional")
+
+        target_url = getattr(parsed, "target_url", None)
+        if target_url and not (
+            target_url.startswith("http://") or target_url.startswith("https://")
+        ):
+            self.error("--target-url must start with http:// or https://")
+
+        return parsed
+
 
 def build_parser() -> argparse.ArgumentParser:
     """
@@ -50,15 +77,16 @@ def build_parser() -> argparse.ArgumentParser:
     and allows future commands to diverge in their argument sets without
     patching shared code.
     """
-    parser = argparse.ArgumentParser(
+    parser = ZTAGuardArgumentParser(
         prog="zta",
         description="ZTA Guard — Zero Trust Architecture Auditor",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
             "  zta scan --path ./my-service\n"
+            "  zta scan https://api.example.com\n"
             "  zta scan --path . --target-url http://localhost:3000\n"
-            "  zta scan --path . --target-url https://api.example.com\n"
+            "  zta export-metrics --path .\n"
             "  zta export-metrics --path . --target-url https://api.example.com\n"
         ),
     )
@@ -96,6 +124,12 @@ def _add_common_args(subparser: argparse.ArgumentParser) -> None:
     that --path and --target-url have identical help text and defaults
     everywhere they appear.
     """
+    subparser.add_argument(
+        "target_url_positional",
+        nargs="?",
+        metavar="URL",
+        help="Live endpoint URL to probe for dynamic analysis (optional)",
+    )
     subparser.add_argument(
         "--path",
         default=".",
@@ -135,7 +169,7 @@ def main() -> None:
     elif args.command == "export-metrics":
         # run_scan returns the full issue list — hand it directly to
         # export_metrics so no data is lost and no second scan is needed.
-        issues = run_scan(path=args.path, target_url=args.target_url)
+        issues = run_scan(path=args.path, target_url=args.target_url, render=False)
         export_metrics(issues)
 
 

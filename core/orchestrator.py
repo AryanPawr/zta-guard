@@ -229,7 +229,7 @@ def _render_executive_summary(issues: List[Issue], targets: List[str]) -> None:
 # ENDPOINT PROBING
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _probe_endpoint(url: str) -> Optional[dict]:
+def _probe_endpoint(url: str, render: bool = True) -> Optional[dict]:
     """
     Issue an HTTP GET to url and return response metadata.
 
@@ -242,7 +242,8 @@ def _probe_endpoint(url: str) -> Optional[dict]:
     redirect headers.
     """
     try:
-        console.print(f"  [dim]→ Probing {url} …[/dim]")
+        if render:
+            console.print(f"  [dim]→ Probing {url} …[/dim]")
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
@@ -256,11 +257,14 @@ def _probe_endpoint(url: str) -> Optional[dict]:
             "headers":     dict(resp.headers),
         }
     except requests.exceptions.ConnectionError:
-        console.print(f"  [red]✗ Connection refused or unreachable: {url}[/red]")
+        if render:
+            console.print(f"  [red]✗ Connection refused or unreachable: {url}[/red]")
     except requests.exceptions.Timeout:
-        console.print(f"  [red]✗ Request timed out after 8 s: {url}[/red]")
+        if render:
+            console.print(f"  [red]✗ Request timed out after 8 s: {url}[/red]")
     except requests.exceptions.RequestException as exc:
-        console.print(f"  [red]✗ Probe error: {exc}[/red]")
+        if render:
+            console.print(f"  [red]✗ Probe error: {exc}[/red]")
     return None
 
 
@@ -268,7 +272,11 @@ def _probe_endpoint(url: str) -> Optional[dict]:
 # PUBLIC SCAN ENTRY POINT
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_scan(path: str, target_url: Optional[str] = None) -> List[Issue]:
+def run_scan(
+    path: str,
+    target_url: Optional[str] = None,
+    render: bool = True,
+) -> List[Issue]:
     """
     Execute the full ZTA audit pipeline and return all discovered issues.
 
@@ -281,45 +289,53 @@ def run_scan(path: str, target_url: Optional[str] = None) -> List[Issue]:
     Returns the aggregated issue list so callers (e.g. export-metrics) can
     consume the result without re-running the scan.
     """
-    console.print(Panel(
-        "[bold blue]ZTA Guard[/bold blue]  —  Zero Trust Architecture Auditor",
-        padding=(0, 2),
-        border_style="blue",
-    ))
+    if render:
+        console.print(Panel(
+            "[bold blue]ZTA Guard[/bold blue]  —  Zero Trust Architecture Auditor",
+            padding=(0, 2),
+            border_style="blue",
+        ))
 
     all_issues:   List[Issue] = []
     scan_targets: List[str]   = []
 
     # ── Phase 1 — Static Analysis ─────────────────────────────────────────────
-    console.rule("[bold]Phase 1 — Static Analysis[/bold]", style="blue")
+    if render:
+        console.rule("[bold]Phase 1 — Static Analysis[/bold]", style="blue")
 
     docker_data = parse_dockerfile(path)
     if docker_data:
         scan_targets.append(f"Dockerfile @ {path}")
         static_issues = run_static_rules(docker_data)
         all_issues.extend(static_issues)
-        _render_issues_table(static_issues, "Dockerfile — ZTA Findings")
+        if render:
+            _render_issues_table(static_issues, "Dockerfile — ZTA Findings")
     else:
-        console.print(f"  [yellow]⚠  No Dockerfile found at path: {path}[/yellow]\n")
+        if render:
+            console.print(f"  [yellow]⚠  No Dockerfile found at path: {path}[/yellow]\n")
 
     # ── Phase 2 — Dynamic Analysis ────────────────────────────────────────────
     if target_url:
-        console.rule("[bold]Phase 2 — Dynamic Analysis[/bold]", style="blue")
+        if render:
+            console.rule("[bold]Phase 2 — Dynamic Analysis[/bold]", style="blue")
         scan_targets.append(target_url)
 
-        probe = _probe_endpoint(target_url)
+        probe = _probe_endpoint(target_url, render=render)
         if probe:
             dynamic_issues = run_dynamic_rules(
                 url=probe["original_url"],
                 headers=probe["headers"],
                 status_code=probe["status_code"],
+                final_url=probe["final_url"],
             )
             all_issues.extend(dynamic_issues)
-            _render_issues_table(dynamic_issues, f"Endpoint — {target_url}")
+            if render:
+                _render_issues_table(dynamic_issues, f"Endpoint — {target_url}")
 
     # ── Phase 3 — Executive Summary ───────────────────────────────────────────
-    console.rule("[bold]Executive Summary[/bold]", style="blue")
-    _render_executive_summary(all_issues, scan_targets)
+    if render:
+        console.rule("[bold]Executive Summary[/bold]", style="blue")
+        _render_executive_summary(all_issues, scan_targets)
 
     return all_issues
 
@@ -372,9 +388,4 @@ def export_metrics(issues: List[Issue]) -> None:
     for cat, count in sorted(cat_counts.items()):
         lines.append(f'zta_issues_by_category{{category="{cat}"}} {count}')
 
-    console.print(Panel(
-        "\n".join(lines),
-        title="[bold green]Metrics Export — Prometheus Exposition Format[/bold green]",
-        border_style="green",
-        padding=(1, 2),
-    ))
+    print("\n".join(lines))

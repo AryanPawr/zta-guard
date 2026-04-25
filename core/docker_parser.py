@@ -88,20 +88,20 @@ def parse_dockerfile(path: str) -> Optional[dict]:
 
     Return structure:
         {
-            "base_image":     str | None   — first FROM image reference
-            "user":           str | None   — USER value (None → runs as root)
-            "exposed_ports":  list[str]    — all EXPOSE values, e.g. ["80","443"]
+            "base_image":     str | None   — final runtime FROM image reference
+            "base_images":    list[str]    — all FROM image references
+            "user":           str | None   — final-stage USER value (None → root)
+            "exposed_ports":  list[str]    — final-stage EXPOSE values
             "_compose_ready": bool         — stub flag for Phase 2
         }
 
     Returns None when no Dockerfile exists at *path*.
 
     Notes:
-        • Only the LAST USER directive is recorded (mirrors Docker's runtime
-          behaviour — the final USER wins).
-        • Only the FIRST FROM is recorded; multi-stage builds have multiple
-          FROM lines, but the base security posture is determined by the first.
-        • EXPOSE values are accumulated across all EXPOSE directives.
+        • Multi-stage builds reset runtime USER / EXPOSE metadata on each FROM.
+          Only the final stage represents the shipped image runtime posture.
+        • All FROM values are preserved in base_images so supply-chain rules
+          can check every stage.
     """
     dockerfile_path = find_dockerfile(path)
     if not dockerfile_path:
@@ -114,6 +114,7 @@ def parse_dockerfile(path: str) -> Optional[dict]:
 
     data: dict = {
         "base_image": None,
+        "base_images": [],
         "user": None,
         "exposed_ports": [],
         "_compose_ready": False,   # Phase 2 placeholder
@@ -122,10 +123,18 @@ def parse_dockerfile(path: str) -> Optional[dict]:
     for line in lines:
         instruction, value = _split_instruction(line)
 
-        if instruction == "FROM" and data["base_image"] is None:
+        if instruction == "FROM":
             # Multi-stage: "FROM python:3.12-slim AS builder"
             # Only the image token (before optional AS clause) is relevant.
-            data["base_image"] = value.split()[0] if value else None
+            image = value.split()[0] if value else None
+            data["base_image"] = image
+            if image:
+                data["base_images"].append(image)
+
+            # A new stage starts from that image's default user and exposes no
+            # ports unless this stage declares them.
+            data["user"] = None
+            data["exposed_ports"] = []
 
         elif instruction == "USER":
             # Keep the last USER directive — Docker uses the final value.

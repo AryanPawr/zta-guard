@@ -5,8 +5,8 @@ setup(
     version="0.1",
     packages=find_packages(),
     install_requires=[
-        "rich",
-        "requests"
+        "requests>=2.28",
+        "rich>=15.0",
     ],
     entry_points={
         "console_scripts": [

@@ -23,20 +23,20 @@ Rules are grouped into two registries:
     DYNAMIC_RULES — applied to a live HTTP probe result
 
 Every dynamic rule shares the same signature:
-    fn(url: str, headers: dict, status_code: int) -> list[Issue]
+    fn(url: str, headers: dict, status_code: int, final_url: str | None) -> list[Issue]
 ─────────────────────────────────────────────────────────────────────────────
 """
 
 from __future__ import annotations
 
 import re
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 # ── Type aliases ─────────────────────────────────────────────────────────────
 
 Issue       = Dict[str, str]
 StaticRule  = Callable[[dict], List[Issue]]
-DynamicRule = Callable[[str, dict, int], List[Issue]]
+DynamicRule = Callable[[str, dict, int, Optional[str]], List[Issue]]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STATIC RULES  (Dockerfile / IaC)
@@ -46,15 +46,20 @@ def check_root_user(docker_data: dict) -> List[Issue]:
     """
     HIGH / identity
 
-    No USER directive means the container process runs as UID 0 (root).
+    No USER directive, or an explicit root user, means the container process
+    runs as UID 0 (root).
     A compromised root container can escape to the host via volume mounts,
     kernel exploits, or misconfigured runtimes.
     ZTA principle: least-privilege identity for every workload.
     """
-    if docker_data.get("user") is None:
+    user = docker_data.get("user")
+    user_value = "" if user is None else str(user).strip().lower()
+    user_principal = user_value.split(":", maxsplit=1)[0]
+
+    if not user_value or user_principal in {"root", "0"}:
         return [{
             "type":     "HIGH",
-            "message":  "No USER directive — container runs as root (UID 0).",
+            "message":  "Container runs as root (UID 0). Use a non-root USER directive.",
             "category": "identity",
         }]
     return []
@@ -108,36 +113,63 @@ def check_latest_tag(docker_data: dict) -> List[Issue]:
     reproducibility. A compromised upstream image silently replaces the build
     without a digest change, violating ZTA's continuous-verification principle.
     """
-    base = docker_data.get("base_image") or ""
-    if not base:
-        return []
+    images = docker_data.get("base_images") or []
+    if not images and docker_data.get("base_image"):
+        images = [docker_data["base_image"]]
 
-    tag = base.split(":")[-1] if ":" in base else "latest"
-    if tag == "latest":
-        return [{
-            "type":     "MEDIUM",
-            "message":  (
-                f"Base image '{base}' uses an unpinned 'latest' tag. "
-                "Pin to a specific digest (sha256:...) for supply-chain integrity."
-            ),
-            "category": "supply_chain",
-        }]
-    return []
+    issues: List[Issue] = []
+    for image in images:
+        if _is_unpinned_image(str(image)):
+            issues.append({
+                "type":     "MEDIUM",
+                "message":  (
+                    f"Base image '{image}' uses an unpinned or 'latest' tag. "
+                    "Pin to a specific version or digest (sha256:...) for supply-chain integrity."
+                ),
+                "category": "supply_chain",
+            })
+    return issues
+
+
+def _is_unpinned_image(image: str) -> bool:
+    """
+    Return True when an image reference has no explicit version tag or uses latest.
+
+    Docker image references may include registry ports, so only a colon after the
+    final slash denotes a tag. Digest-pinned references are considered pinned.
+    """
+    if not image:
+        return False
+    if "@" in image:
+        return False
+
+    last_component = image.rsplit("/", maxsplit=1)[-1]
+    if ":" not in last_component:
+        return True
+
+    tag = last_component.rsplit(":", maxsplit=1)[-1]
+    return tag == "latest"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # DYNAMIC RULES  (HTTP endpoint probing)
-# Uniform signature: (url, headers, status_code) -> List[Issue]
+# Uniform signature: (url, headers, status_code, final_url) -> List[Issue]
 # ─────────────────────────────────────────────────────────────────────────────
 
-def check_https_enforcement(url: str, headers: dict, status_code: int) -> List[Issue]:
+def check_https_enforcement(
+    url: str,
+    headers: dict,
+    status_code: int,
+    final_url: Optional[str] = None,
+) -> List[Issue]:
     """
     HIGH / transport
 
     Plain HTTP transmits credentials, tokens, and session cookies in
     cleartext. ZTA mandates TLS for every connection — internal or external.
     """
-    if url.startswith("http://"):
+    effective_url = final_url or url
+    if effective_url.startswith("http://"):
         return [{
             "type":     "HIGH",
             "message":  (
@@ -149,7 +181,12 @@ def check_https_enforcement(url: str, headers: dict, status_code: int) -> List[I
     return []
 
 
-def check_hsts(url: str, headers: dict, status_code: int) -> List[Issue]:
+def check_hsts(
+    url: str,
+    headers: dict,
+    status_code: int,
+    final_url: Optional[str] = None,
+) -> List[Issue]:
     """
     Three-tier HSTS validation — transport
 
@@ -177,10 +214,10 @@ def check_hsts(url: str, headers: dict, status_code: int) -> List[Issue]:
     # ── Tier 1: header absent ────────────────────────────────────────────────
     if not hsts_value:
         return [{
-            "type":     "MEDIUM",
+            "type":     "HIGH",
             "message":  (
                 "Strict-Transport-Security (HSTS) header is not detected. "
-                "This may depend on endpoint, CDN, or request context."
+                "This may depend on endpoint, CDN, or request context. "
                 f"Add 'max-age={RECOMMENDED_MAX_AGE}; includeSubDomains' "
                 "to prevent SSL stripping."
             ),
@@ -218,7 +255,12 @@ def check_hsts(url: str, headers: dict, status_code: int) -> List[Issue]:
     return issues
 
 
-def check_cors(url: str, headers: dict, status_code: int) -> List[Issue]:
+def check_cors(
+    url: str,
+    headers: dict,
+    status_code: int,
+    final_url: Optional[str] = None,
+) -> List[Issue]:
     """
     HIGH / access_control
 
@@ -241,7 +283,12 @@ def check_cors(url: str, headers: dict, status_code: int) -> List[Issue]:
     return []
 
 
-def check_sensitive_headers(url: str, headers: dict, status_code: int) -> List[Issue]:
+def check_sensitive_headers(
+    url: str,
+    headers: dict,
+    status_code: int,
+    final_url: Optional[str] = None,
+) -> List[Issue]:
     """
     LOW / information_disclosure
 
@@ -306,9 +353,14 @@ def run_static_rules(docker_data: dict) -> List[Issue]:
     return issues
 
 
-def run_dynamic_rules(url: str, headers: dict, status_code: int) -> List[Issue]:
+def run_dynamic_rules(
+    url: str,
+    headers: dict,
+    status_code: int,
+    final_url: Optional[str] = None,
+) -> List[Issue]:
     """Run every registered dynamic rule against a live HTTP probe result."""
     issues: List[Issue] = []
     for rule_fn in DYNAMIC_RULES:
-        issues.extend(rule_fn(url, headers, status_code))
+        issues.extend(rule_fn(url, headers, status_code, final_url))
     return issues
