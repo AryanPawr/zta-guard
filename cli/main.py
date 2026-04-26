@@ -20,6 +20,7 @@ Usage examples
     zta scan --path ./my-service
     zta scan https://api.example.com
     zta scan --path . --target-url http://localhost:3000
+    zta scan --output json --ci
     zta scan --path . --target-url https://api.example.com
     zta export-metrics --path .
     zta export-metrics --path . --target-url https://api.example.com
@@ -29,6 +30,8 @@ Usage examples
 from __future__ import annotations
 
 import argparse
+import json
+import sys
 
 from core.orchestrator import export_metrics, run_scan
 
@@ -86,6 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  zta scan --path ./my-service\n"
             "  zta scan https://api.example.com\n"
             "  zta scan --path . --target-url http://localhost:3000\n"
+            "  zta scan --output json --ci\n"
             "  zta export-metrics --path .\n"
             "  zta export-metrics --path . --target-url https://api.example.com\n"
         ),
@@ -143,6 +147,17 @@ def _add_common_args(subparser: argparse.ArgumentParser) -> None:
         dest="target_url",       # normalise hyphen → underscore for args.target_url
         help="Live endpoint URL to probe for dynamic analysis (optional)",
     )
+    subparser.add_argument(
+        "--output",
+        choices=("table", "json"),
+        default="table",
+        help="Output format for scan results (default: table)",
+    )
+    subparser.add_argument(
+        "--ci",
+        action="store_true",
+        help="Exit with status 1 when HIGH severity issues are found",
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -164,7 +179,23 @@ def main() -> None:
     args   = parser.parse_args()
 
     if args.command == "scan":
-        run_scan(path=args.path, target_url=args.target_url)
+        render = args.output != "json"
+        result = run_scan(
+            path=args.path,
+            target_url=args.target_url,
+            render=render,
+            output_format=args.output,
+        )
+
+        if args.output == "json":
+            issues, report = result
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            issues = result
+
+        if args.ci:
+            has_high = any(issue.get("type") == "HIGH" for issue in issues)
+            sys.exit(1 if has_high else 0)
 
     elif args.command == "export-metrics":
         # run_scan returns the full issue list — hand it directly to

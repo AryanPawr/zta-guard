@@ -6,7 +6,7 @@ ZTA Guard — Infrastructure File Parser
 Responsibilities
     • Locate and parse a Dockerfile inside a given directory
     • Return a normalised data dict for the rule engine
-    • Provide a stub (find + placeholder parse) for docker-compose files
+    • Locate and parse a Docker Compose file inside a given directory
 
 Robustness goals
     • Case-insensitive instruction matching  (from / FROM / From all valid)
@@ -22,6 +22,8 @@ from __future__ import annotations
 import os
 import re
 from typing import Optional
+
+import yaml
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -149,7 +151,7 @@ def parse_dockerfile(path: str) -> Optional[dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DOCKER-COMPOSE STUB  (Phase 2)
+# DOCKER COMPOSE
 # ─────────────────────────────────────────────────────────────────────────────
 
 def find_compose_file(path: str) -> Optional[str]:
@@ -157,7 +159,7 @@ def find_compose_file(path: str) -> Optional[str]:
     Locate a docker-compose / Compose file under *path*.
 
     Checks canonical filenames in order of preference.
-    Full parsing is deferred to Phase 2.
+    Returns the first matching filename, or None if not found.
     """
     candidates = [
         "docker-compose.yml",
@@ -173,25 +175,157 @@ def find_compose_file(path: str) -> Optional[str]:
 
 
 def parse_compose_file(path: str) -> Optional[dict]:
-    """
-    Phase 2 stub for docker-compose parsing.
-
-    When implemented this function will:
-        • Extract all service definitions
-        • Map port bindings (host:container) for 0.0.0.0 detection
-        • Identify missing 'networks:' sections (implicit bridge = no segmentation)
-        • Flag privileged: true services
-        • Check for missing read_only: true on filesystem mounts
-
-    Returns a minimal stub dict if a compose file exists, else None.
-    """
+    """Parse a Docker Compose file into rule-engine-friendly metadata."""
     compose_path = find_compose_file(path)
     if not compose_path:
         return None
 
-    # TODO (Phase 2): pip install pyyaml, then parse YAML here.
-    return {
+    result = {
         "_path": compose_path,
         "_parsed": False,
-        "_note": "docker-compose parsing scheduled for Phase 2",
+        "services": {},
+        "networks": {},
+        "errors": [],
     }
+
+    try:
+        with open(compose_path, "r", encoding="utf-8") as fh:
+            raw = yaml.safe_load(fh)
+    except yaml.YAMLError as exc:
+        result["errors"].append(f"Malformed Compose YAML: {exc}")
+        return result
+    except OSError as exc:
+        result["errors"].append(f"Unable to read Compose file: {exc}")
+        return result
+
+    if not raw:
+        result["errors"].append("Compose file is empty.")
+        return result
+
+    if not isinstance(raw, dict):
+        result["errors"].append("Compose file root must be a mapping.")
+        return result
+
+    services = raw.get("services")
+    if not isinstance(services, dict) or not services:
+        result["errors"].append("Compose file does not define services.")
+        return result
+
+    result["_parsed"] = True
+    result["networks"] = raw.get("networks") if isinstance(raw.get("networks"), dict) else {}
+
+    for service_name, service_data in services.items():
+        if not isinstance(service_data, dict):
+            service_data = {}
+
+        result["services"][str(service_name)] = {
+            "privileged": bool(service_data.get("privileged", False)),
+            "network_mode": _string_or_none(service_data.get("network_mode")),
+            "networks": _normalize_string_list(service_data.get("networks")),
+            "ports": [_normalize_port(port) for port in _as_list(service_data.get("ports"))],
+            "expose": [str(port) for port in _as_list(service_data.get("expose"))],
+            "volumes": [str(volume) for volume in _as_list(service_data.get("volumes"))],
+            "environment": _normalize_environment(service_data.get("environment")),
+        }
+
+    return result
+
+
+def _string_or_none(value) -> Optional[str]:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _as_list(value) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _normalize_string_list(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        return [str(key) for key in value.keys()]
+    return [str(item) for item in _as_list(value)]
+
+
+def _normalize_environment(value) -> dict[str, str]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return {str(key): str(val) for key, val in value.items() if val is not None}
+
+    env: dict[str, str] = {}
+    for item in _as_list(value):
+        text = str(item)
+        if "=" in text:
+            key, val = text.split("=", maxsplit=1)
+            env[key] = val
+    return env
+
+
+def _normalize_port(value) -> dict:
+    raw = str(value)
+    port = {
+        "raw": raw,
+        "host_ip": None,
+        "published": None,
+        "target": None,
+        "protocol": "tcp",
+        "exposure": "internal",
+    }
+
+    if isinstance(value, dict):
+        host_ip = value.get("host_ip") or value.get("host-ip")
+        published = value.get("published")
+        target = value.get("target")
+        protocol = value.get("protocol", "tcp")
+        port.update({
+            "host_ip": str(host_ip) if host_ip is not None else None,
+            "published": str(published) if published is not None else None,
+            "target": _strip_protocol(str(target)) if target is not None else None,
+            "protocol": str(protocol),
+        })
+        port["exposure"] = _port_exposure(port["host_ip"], port["published"])
+        return port
+
+    text = raw.strip().strip("'\"")
+    text, protocol = _split_protocol(text)
+    port["protocol"] = protocol
+    pieces = text.split(":")
+
+    if len(pieces) == 1:
+        port["target"] = pieces[0]
+    elif len(pieces) == 2:
+        port["published"], port["target"] = pieces
+    else:
+        port["host_ip"] = ":".join(pieces[:-2])
+        port["published"] = pieces[-2]
+        port["target"] = pieces[-1]
+
+    port["target"] = _strip_protocol(port["target"]) if port["target"] else None
+    port["exposure"] = _port_exposure(port["host_ip"], port["published"])
+    return port
+
+
+def _split_protocol(value: str) -> tuple[str, str]:
+    if "/" not in value:
+        return value, "tcp"
+    port_part, protocol = value.rsplit("/", maxsplit=1)
+    return port_part, protocol
+
+
+def _strip_protocol(value: str) -> str:
+    return value.split("/", maxsplit=1)[0]
+
+
+def _port_exposure(host_ip: Optional[str], published: Optional[str]) -> str:
+    if not published:
+        return "internal"
+    if host_ip in {"127.0.0.1", "localhost", "::1"}:
+        return "internal"
+    return "public"

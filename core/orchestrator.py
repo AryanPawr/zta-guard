@@ -4,7 +4,7 @@ core/orchestrator.py
 ZTA Guard — Scan Orchestrator
 
 Audit pipeline (three phases):
-    Phase 1 — Static Analysis   parse Dockerfile → run static rules → render
+    Phase 1 — Static Analysis   parse Dockerfile/Compose → run static rules → render
     Phase 2 — Dynamic Analysis  probe endpoint   → run dynamic rules → render
     Phase 3 — Executive Summary aggregate issues → compute score → render panel
 
@@ -17,15 +17,15 @@ Scoring model:
     to the others.  The product gives a risk-calibrated deduction per finding.
 
 Public API:
-    run_scan(path, target_url)  → List[Issue]
-    export_metrics(issues)      → None   (Prometheus text to stdout)
+    run_scan(path, target_url, render, output_format)  → List[Issue] | (List[Issue], report)
+    export_metrics(issues)                             → None
 ─────────────────────────────────────────────────────────────────────────────
 """
 
 from __future__ import annotations
 
 import warnings
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning  # type: ignore
@@ -35,8 +35,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from core.docker_parser import parse_dockerfile
-from core.rules import Issue, run_dynamic_rules, run_static_rules
+from core.docker_parser import parse_compose_file, parse_dockerfile
+from core.rules import Issue, run_compose_rules, run_dynamic_rules, run_static_rules
 
 warnings.filterwarnings("ignore", category=InsecureRequestWarning)
 
@@ -71,9 +71,25 @@ CATEGORY_WEIGHT: dict[str, float] = {
     "transport":             1.4,
     "network":               1.3,
     "access_control":        1.2,
+    "application_security":   1.1,
     "supply_chain":          1.0,
     "general":               1.0,
     "information_disclosure": 0.7,
+}
+
+REQUIRED_SCORE_CATEGORIES: tuple[str, ...] = (
+    "identity",
+    "network",
+    "transport",
+    "access_control",
+    "supply_chain",
+    "application_security",
+)
+
+EXPOSURE_WEIGHT: dict[str, float] = {
+    "public": 1.2,
+    "unknown": 1.0,
+    "internal": 0.8,
 }
 
 SEVERITY_COLOR: dict[str, str] = {
@@ -105,9 +121,10 @@ def _score_issue(issue: Issue) -> float:
         MEDIUM / supply_chain          → 8.0  × 1.0 =  8.0
         LOW    / information_disclosure → 3.0  × 0.7 =  2.1
     """
-    severity_pts = SEVERITY_WEIGHT.get(issue.get("type", "LOW"), 3.0)
+    severity_pts = SEVERITY_WEIGHT.get(str(issue.get("severity", issue.get("type", "LOW"))), 3.0)
     category_mul = CATEGORY_WEIGHT.get(issue.get("category", "general"), 1.0)
-    return severity_pts * category_mul
+    exposure_mul = EXPOSURE_WEIGHT.get(str(issue.get("exposure", "unknown")), 1.0)
+    return severity_pts * category_mul * exposure_mul
 
 
 def _calculate_score(issues: List[Issue]) -> int:
@@ -146,10 +163,77 @@ def _risk_label(score: int) -> Tuple[str, str]:
 
 def _severity_counts(issues: List[Issue]) -> Tuple[int, int, int]:
     """Return (high, medium, low) counts from an issue list."""
-    high   = sum(1 for i in issues if i["type"] == "HIGH")
-    medium = sum(1 for i in issues if i["type"] == "MEDIUM")
-    low    = sum(1 for i in issues if i["type"] == "LOW")
+    high   = sum(1 for i in issues if i.get("type") == "HIGH")
+    medium = sum(1 for i in issues if i.get("type") == "MEDIUM")
+    low    = sum(1 for i in issues if i.get("type") == "LOW")
     return high, medium, low
+
+
+def _category_counts(issues: List[Issue]) -> Dict[str, int]:
+    counts: Dict[str, int] = {category: 0 for category in REQUIRED_SCORE_CATEGORIES}
+    for issue in issues:
+        category = str(issue.get("category", "general"))
+        counts[category] = counts.get(category, 0) + 1
+    return counts
+
+
+def _category_scores(issues: List[Issue]) -> Dict[str, int]:
+    scores: Dict[str, int] = {}
+    categories = set(REQUIRED_SCORE_CATEGORIES)
+    categories.update(str(issue.get("category", "general")) for issue in issues)
+    for category in sorted(categories):
+        penalty = sum(_score_issue(issue) for issue in issues if issue.get("category") == category)
+        scores[category] = max(0, min(100, round(100 - penalty)))
+    return scores
+
+
+def _prioritized_fixes(issues: List[Issue]) -> List[dict]:
+    severity_rank = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
+    exposure_rank = {"public": 3, "unknown": 2, "internal": 1}
+
+    sorted_issues = sorted(
+        issues,
+        key=lambda issue: (
+            -severity_rank.get(str(issue.get("type", "LOW")), 0),
+            -exposure_rank.get(str(issue.get("exposure", "unknown")), 0),
+            -CATEGORY_WEIGHT.get(str(issue.get("category", "general")), 1.0),
+            str(issue.get("rule_id", "")),
+        ),
+    )
+
+    return [
+        {
+            "rule_id": issue.get("rule_id", ""),
+            "title": issue.get("title", ""),
+            "severity": issue.get("severity", issue.get("type", "")),
+            "category": issue.get("category", "general"),
+            "exposure": issue.get("exposure", "unknown"),
+            "recommendation": issue.get("recommendation", ""),
+            "source": issue.get("source", ""),
+        }
+        for issue in sorted_issues
+    ]
+
+
+def build_scan_report(issues: List[Issue], targets: List[str]) -> dict:
+    score = _calculate_score(issues)
+    label, _ = _risk_label(score)
+    high, medium, low = _severity_counts(issues)
+    return {
+        "scanned_targets": targets,
+        "overall_score": score,
+        "risk_label": label,
+        "issue_count": len(issues),
+        "severity_breakdown": {
+            "HIGH": high,
+            "MEDIUM": medium,
+            "LOW": low,
+        },
+        "category_breakdown": _category_counts(issues),
+        "score_breakdown_by_category": _category_scores(issues),
+        "prioritized_fixes": _prioritized_fixes(issues),
+        "issues": issues,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -187,7 +271,7 @@ def _render_issues_table(issues: List[Issue], title: str) -> None:
         table.add_row(
             f"[{color}]{issue['type']}[/{color}]",
             issue.get("category", "general"),
-            issue["message"],
+            str(issue["message"]),
         )
 
     console.print(table)
@@ -249,12 +333,20 @@ def _probe_endpoint(url: str, render: bool = True) -> Optional[dict]:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
 
-        resp = requests.get(url, timeout=8, allow_redirects=True, verify=False, headers=headers )
+        resp = requests.get(url, timeout=8, allow_redirects=True, verify=False, headers=headers)
+        response_headers = dict(resp.headers)
+        raw_headers = getattr(getattr(resp, "raw", None), "headers", None)
+        get_all = getattr(raw_headers, "get_all", None)
+        if callable(get_all):
+            set_cookie_values = get_all("Set-Cookie")
+            if isinstance(set_cookie_values, (list, tuple)) and set_cookie_values:
+                response_headers["Set-Cookie"] = list(set_cookie_values)
+
         return {
             "original_url": url,
             "final_url":         str(resp.url),
             "status_code": resp.status_code,
-            "headers":     dict(resp.headers),
+            "headers":     response_headers,
         }
     except requests.exceptions.ConnectionError:
         if render:
@@ -276,7 +368,8 @@ def run_scan(
     path: str,
     target_url: Optional[str] = None,
     render: bool = True,
-) -> List[Issue]:
+    output_format: str = "table",
+):
     """
     Execute the full ZTA audit pipeline and return all discovered issues.
 
@@ -314,6 +407,14 @@ def run_scan(
         if render:
             console.print(f"  [yellow]⚠  No Dockerfile found at path: {path}[/yellow]\n")
 
+    compose_data = parse_compose_file(path)
+    if compose_data:
+        scan_targets.append(f"Compose @ {compose_data['_path']}")
+        compose_issues = run_compose_rules(compose_data)
+        all_issues.extend(compose_issues)
+        if render:
+            _render_issues_table(compose_issues, "Docker Compose — ZTA Findings")
+
     # ── Phase 2 — Dynamic Analysis ────────────────────────────────────────────
     if target_url:
         if render:
@@ -336,6 +437,9 @@ def run_scan(
     if render:
         console.rule("[bold]Executive Summary[/bold]", style="blue")
         _render_executive_summary(all_issues, scan_targets)
+
+    if output_format == "json":
+        return all_issues, build_scan_report(all_issues, scan_targets)
 
     return all_issues
 
