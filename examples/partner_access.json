@@ -1,0 +1,408 @@
+{
+  "dataset_name": "D5 contractor and delivery-partner scenarios",
+  "synthetic": true,
+  "policy": {
+    "policy_id": "D3-PARTNER-ACCESS-V1",
+    "role_eligible_resources": {
+      "contractor": [
+        "inventory-read",
+        "work-order-update",
+        "maintenance-schedule-read"
+      ],
+      "delivery_partner": [
+        "delivery-portal",
+        "shipment-status"
+      ]
+    },
+    "context_requirements": {
+      "mfa_verified": true,
+      "allowed_device_postures": [
+        "compliant",
+        "managed"
+      ],
+      "conditional_device_postures": [
+        "managed"
+      ]
+    },
+    "segmentation_requirements": {
+      "resource_zones": {
+        "inventory-read": "warehouse",
+        "work-order-update": "warehouse",
+        "maintenance-schedule-read": "warehouse",
+        "delivery-portal": "third-party-partner",
+        "shipment-status": "third-party-partner"
+      },
+      "allowed_paths": [
+        {
+          "partner_type": "contractor",
+          "network_zone": "third-party-partner",
+          "resource_zone": "warehouse"
+        },
+        {
+          "partner_type": "delivery_partner",
+          "network_zone": "third-party-partner",
+          "resource_zone": "third-party-partner"
+        }
+      ]
+    },
+    "monitoring_requirements": {
+      "required_events": [
+        "identity",
+        "device",
+        "access",
+        "network"
+      ]
+    }
+  },
+  "accounts": [
+    {
+      "identity_id": "ctr-ana",
+      "partner_type": "contractor",
+      "engagement": {
+        "status": "active",
+        "start_date": "2026-10-01",
+        "end_date": "2026-12-15"
+      },
+      "account_state": "enabled",
+      "granted_resources": [
+        "inventory-read",
+        "work-order-update",
+        "finance-admin"
+      ]
+    },
+    {
+      "identity_id": "ctr-ben",
+      "partner_type": "contractor",
+      "engagement": {
+        "status": "ended",
+        "start_date": "2026-06-01",
+        "end_date": "2026-08-31"
+      },
+      "account_state": "enabled",
+      "granted_resources": [
+        "inventory-read"
+      ]
+    },
+    {
+      "identity_id": "ctr-chen",
+      "partner_type": "contractor",
+      "engagement": {
+        "status": "active",
+        "start_date": "2026-11-01",
+        "end_date": "2027-02-28"
+      },
+      "account_state": "enabled",
+      "granted_resources": [
+        "inventory-read"
+      ]
+    },
+    {
+      "identity_id": "dp-delta",
+      "partner_type": "delivery_partner",
+      "engagement": {
+        "status": "active",
+        "start_date": "2026-01-01",
+        "end_date": "2027-01-01"
+      },
+      "account_state": "enabled",
+      "granted_resources": [
+        "delivery-portal"
+      ]
+    },
+    {
+      "identity_id": "ctr-disabled",
+      "partner_type": "contractor",
+      "engagement": {
+        "status": "active",
+        "start_date": "2026-10-01",
+        "end_date": "2026-12-31"
+      },
+      "account_state": "disabled",
+      "granted_resources": [
+        "inventory-read"
+      ]
+    },
+    {
+      "identity_id": "ctr-malformed",
+      "partner_type": "contractor",
+      "engagement": {
+        "status": "active",
+        "start_date": "2026-09-01"
+      },
+      "account_state": "enabled",
+      "granted_resources": [
+        "inventory-read"
+      ]
+    },
+    {
+      "identity_id": "dp-expired",
+      "partner_type": "delivery_partner",
+      "engagement": {
+        "status": "active",
+        "start_date": "2026-01-01",
+        "end_date": "2026-09-30"
+      },
+      "account_state": "enabled",
+      "granted_resources": [
+        "delivery-portal"
+      ]
+    },
+    {
+      "identity_id": "ctr-inactive",
+      "partner_type": "contractor",
+      "engagement": {
+        "status": "inactive",
+        "start_date": "2026-09-01",
+        "end_date": "2026-12-31"
+      },
+      "account_state": "enabled",
+      "granted_resources": [
+        "work-order-update"
+      ]
+    },
+    {
+      "identity_id": "ctr-pending",
+      "partner_type": "contractor",
+      "engagement": {
+        "status": "pending",
+        "start_date": "2026-11-01",
+        "end_date": "2027-01-31"
+      },
+      "account_state": "enabled",
+      "granted_resources": [
+        "inventory-read"
+      ]
+    },
+    {
+      "identity_id": "ctr-suspended",
+      "partner_type": "contractor",
+      "engagement": {
+        "status": "suspended",
+        "start_date": "2026-09-01",
+        "end_date": "2026-12-31"
+      },
+      "account_state": "enabled",
+      "granted_resources": [
+        "work-order-update"
+      ]
+    }
+  ],
+  "requests": [
+    {
+      "request_id": "scenario-01-legitimate-contractor",
+      "identity_id": "ctr-ana",
+      "resource": "inventory-read",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "ALLOW"
+    },
+    {
+      "request_id": "scenario-02-ineligible-resource",
+      "identity_id": "ctr-ana",
+      "resource": "finance-admin",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-03-ended-engagement",
+      "identity_id": "ctr-ben",
+      "resource": "inventory-read",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "managed",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-04-not-yet-started",
+      "identity_id": "ctr-chen",
+      "resource": "inventory-read",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-05-legitimate-delivery-partner",
+      "identity_id": "dp-delta",
+      "resource": "delivery-portal",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "ALLOW"
+    },
+    {
+      "request_id": "scenario-06-mfa-failure",
+      "identity_id": "dp-delta",
+      "resource": "delivery-portal",
+      "context": {
+        "mfa_verified": false,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-07-unmanaged-device",
+      "identity_id": "dp-delta",
+      "resource": "delivery-portal",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "unmanaged",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-08-disabled-account",
+      "identity_id": "ctr-disabled",
+      "resource": "inventory-read",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-09-missing-lifecycle-date",
+      "identity_id": "ctr-malformed",
+      "resource": "inventory-read",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-10-not-explicitly-granted",
+      "identity_id": "dp-delta",
+      "resource": "shipment-status",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-11-expired-active-record",
+      "identity_id": "dp-expired",
+      "resource": "delivery-portal",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-12-inactive-engagement",
+      "identity_id": "ctr-inactive",
+      "resource": "work-order-update",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-13-segmentation-path-denied",
+      "identity_id": "dp-delta",
+      "resource": "delivery-portal",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "corporate",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-14-monitoring-evidence-missing",
+      "identity_id": "ctr-ana",
+      "resource": "inventory-read",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-15-conditional-device",
+      "identity_id": "dp-delta",
+      "resource": "delivery-portal",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "managed",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "CONDITIONAL"
+    },
+    {
+      "request_id": "scenario-16-pending-engagement",
+      "identity_id": "ctr-pending",
+      "resource": "inventory-read",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-17-suspended-engagement",
+      "identity_id": "ctr-suspended",
+      "resource": "work-order-update",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    },
+    {
+      "request_id": "scenario-18-unknown-identity",
+      "identity_id": "unknown-partner",
+      "resource": "inventory-read",
+      "context": {
+        "mfa_verified": true,
+        "device_posture": "compliant",
+        "network_zone": "third-party-partner",
+        "telemetry": {"identity": true, "device": true, "access": true, "network": true}
+      },
+      "expected_decision": "DENY"
+    }
+  ]
+}

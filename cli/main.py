@@ -6,8 +6,8 @@ ZTA Guard — CLI Entry Point
 Design decisions
     • argparse subparsers (not positional choices)
       Each command gets its own add_parser() call, its own help text, and its
-      own argument set.  Adding a third command in Phase 2 is a one-function
-      addition — no changes to existing argument definitions.
+      own argument set.  The nested partner command family remains separate
+      from deployment scanning and metrics arguments.
 
     • build_parser() is extracted from main() so it can be imported and
       tested in isolation (useful for argparse unit tests).
@@ -24,6 +24,8 @@ Usage examples
     zta scan --path . --target-url https://api.example.com
     zta export-metrics --path .
     zta export-metrics --path . --target-url https://api.example.com
+    zta partner evaluate --input examples/partner_access.json --as-of 2026-10-21
+    zta partner audit --input examples/partner_access.json --as-of 2026-10-21 --output json
 ─────────────────────────────────────────────────────────────────────────────
 """
 
@@ -34,6 +36,15 @@ import json
 import sys
 
 from core.orchestrator import export_metrics, run_scan
+from core.partner_access import (
+    PartnerInputError,
+    audit_partner_accounts,
+    evaluate_partner_requests,
+    load_partner_dataset,
+    parse_as_of,
+    render_partner_audit,
+    render_partner_evaluation,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -74,6 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
     Subcommands
         scan            Run static + optional dynamic ZTA audit.
         export-metrics  Same scan, then emit Prometheus-format metrics.
+        partner         Evaluate or audit synthetic partner-access records.
 
     Each subcommand registers its own --path and --target-url arguments
     independently.  This makes each command fully self-documented in --help
@@ -92,6 +104,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  zta scan --output json --ci\n"
             "  zta export-metrics --path .\n"
             "  zta export-metrics --path . --target-url https://api.example.com\n"
+            "  zta partner evaluate --input examples/partner_access.json --as-of 2026-10-21\n"
+            "  zta partner audit --input examples/partner_access.json --as-of 2026-10-21 --output json\n"
         ),
     )
 
@@ -116,6 +130,30 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     _add_common_args(metrics_p)
+
+    # ── partner ───────────────────────────────────────────────────────────────
+    partner_p = subparsers.add_parser(
+        "partner",
+        help="Evaluate and audit synthetic contractor/delivery-partner access",
+        description=(
+            "Run the limited, read-only partner-access policy prototype against "
+            "synthetic JSON data."
+        ),
+    )
+    partner_commands = partner_p.add_subparsers(dest="partner_command", metavar="ACTION")
+    partner_commands.required = True
+
+    evaluate_p = partner_commands.add_parser(
+        "evaluate",
+        help="Evaluate synthetic access requests",
+    )
+    _add_partner_args(evaluate_p)
+
+    audit_p = partner_commands.add_parser(
+        "audit",
+        help="Audit synthetic accounts for lifecycle and grant problems",
+    )
+    _add_partner_args(audit_p)
 
     return parser
 
@@ -157,6 +195,28 @@ def _add_common_args(subparser: argparse.ArgumentParser) -> None:
         "--ci",
         action="store_true",
         help="Exit with status 1 when HIGH severity issues are found",
+    )
+
+
+def _add_partner_args(subparser: argparse.ArgumentParser) -> None:
+    subparser.add_argument(
+        "--input",
+        required=True,
+        metavar="FILE",
+        help="Synthetic partner policy, account, and request JSON file",
+    )
+    subparser.add_argument(
+        "--as-of",
+        required=True,
+        metavar="YYYY-MM-DD",
+        dest="as_of",
+        help="Explicit evaluation date for reproducible results",
+    )
+    subparser.add_argument(
+        "--output",
+        choices=("table", "json"),
+        default="table",
+        help="Output format (default: table)",
     )
 
 
@@ -202,6 +262,24 @@ def main() -> None:
         # export_metrics so no data is lost and no second scan is needed.
         issues = run_scan(path=args.path, target_url=args.target_url, render=False)
         export_metrics(issues)
+
+    elif args.command == "partner":
+        try:
+            dataset = load_partner_dataset(args.input)
+            as_of = parse_as_of(args.as_of)
+            if args.partner_command == "evaluate":
+                report = evaluate_partner_requests(dataset, as_of)
+                renderer = render_partner_evaluation
+            else:
+                report = audit_partner_accounts(dataset, as_of)
+                renderer = render_partner_audit
+        except PartnerInputError as exc:
+            parser.error(str(exc))
+
+        if args.output == "json":
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            renderer(report)
 
 
 if __name__ == "__main__":
