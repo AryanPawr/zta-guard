@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Visual dashboard for the synthetic ZTA Guard contractor and delivery-partner access prototype.">
+  <title>ZTA Guard Partner Access Lab</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to dashboard</a>
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="ZTA Guard home">
+      <span class="brand-mark" aria-hidden="true">Z</span>
+      <span><strong>ZTA Guard</strong><small>Partner Access Lab</small></span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="#overview">Overview</a>
+      <a href="#explorer">Scenarios</a>
+      <a href="#checks">Checks</a>
+      <a class="github-link" href="https://github.com/AryanPawr/zta-guard" target="_blank" rel="noreferrer">View code <span aria-hidden="true">↗</span></a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="pulse"></span> Synthetic, read-only demonstration</div>
+        <h1>See every access decision, not just the final answer.</h1>
+        <p class="hero-lede">Explore how ZTA Guard evaluates contractor and delivery-partner access using lifecycle, least-privilege, device, segmentation and monitoring evidence.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#explorer">Explore scenarios</a>
+          <label class="button secondary" for="report-upload">Visualize a JSON report</label>
+          <input id="report-upload" type="file" accept="application/json,.json" hidden>
+        </div>
+        <p class="privacy-note"><span aria-hidden="true">●</span> Uploaded reports stay in your browser. Nothing is sent to a server.</p>
+      </div>
+      <div class="hero-visual" aria-label="Example request decision flow">
+        <div class="request-card">
+          <div class="request-topline"><span>REQUEST 01</span><span class="status allow">ALLOW</span></div>
+          <div class="identity-line"><span class="avatar">CA</span><div><strong>ctr-ana</strong><small>Contractor · inventory-read</small></div></div>
+          <div class="signal-grid">
+            <span><i class="ok"></i> Active engagement</span>
+            <span><i class="ok"></i> Explicit grant</span>
+            <span><i class="ok"></i> MFA verified</span>
+            <span><i class="ok"></i> Allowed path</span>
+          </div>
+          <div class="decision-line"><span>10 policy checks passed</span><strong>Continue time-bound access</strong></div>
+        </div>
+        <div class="orbit orbit-one"></div>
+        <div class="orbit orbit-two"></div>
+      </div>
+    </section>
+
+    <section class="metric-strip" aria-label="Prototype summary">
+      <article><span class="metric-value" id="metric-requests">18</span><span class="metric-label">requests evaluated</span></article>
+      <article><span class="metric-value">10</span><span class="metric-label">request-time checks</span></article>
+      <article><span class="metric-value" id="metric-matches">18/18</span><span class="metric-label">expected matches</span></article>
+      <article><span class="metric-value" id="metric-findings">8</span><span class="metric-label">audit findings</span></article>
+    </section>
+
+    <section class="section" id="overview">
+      <div class="section-heading">
+        <div><span class="section-number">01</span><p class="kicker">Decision overview</p><h2>Policy outcomes at a glance</h2></div>
+        <p>Every decision is traceable to a stable policy check, synthetic evidence and a recommended next step.</p>
+      </div>
+
+      <div class="overview-grid">
+        <article class="panel decision-panel">
+          <div class="panel-header"><div><p class="panel-kicker">Sample evaluation</p><h3>18 request outcomes</h3></div><span class="date-chip">As of 21 Oct 2026</span></div>
+          <div class="chart-wrap">
+            <div class="donut" id="decision-donut" role="img" aria-label="Two allowed, one conditional and fifteen denied requests">
+              <div><strong id="donut-total">18</strong><span>total</span></div>
+            </div>
+            <div class="legend">
+              <div><span class="legend-dot allow-bg"></span><span>Allow</span><strong id="legend-allow">2</strong></div>
+              <div><span class="legend-dot conditional-bg"></span><span>Conditional</span><strong id="legend-conditional">1</strong></div>
+              <div><span class="legend-dot deny-bg"></span><span>Deny</span><strong id="legend-deny">15</strong></div>
+            </div>
+          </div>
+          <p class="panel-note">High denial volume is intentional: the sample is designed to exercise fail-closed and high-risk cases.</p>
+        </article>
+
+        <article class="panel flow-panel">
+          <div class="panel-header"><div><p class="panel-kicker">How it works</p><h3>One request, five evidence areas</h3></div></div>
+          <div class="flow" aria-label="Policy decision sequence">
+            <div class="flow-step"><span>1</span><div><strong>Identity</strong><small>Unique account, lifecycle and MFA</small></div></div>
+            <div class="flow-connector"></div>
+            <div class="flow-step"><span>2</span><div><strong>Least privilege</strong><small>Role eligibility plus explicit grant</small></div></div>
+            <div class="flow-connector"></div>
+            <div class="flow-step"><span>3</span><div><strong>Context</strong><small>Device, path and telemetry evidence</small></div></div>
+            <div class="flow-connector"></div>
+            <div class="flow-step final"><span>4</span><div><strong>Decision</strong><small>Allow, conditional or deny</small></div></div>
+          </div>
+          <div class="fail-closed"><span aria-hidden="true">!</span><p><strong>Fail closed</strong> Missing, malformed, inconsistent or ambiguous evidence results in denial.</p></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section explorer-section" id="explorer">
+      <div class="section-heading">
+        <div><span class="section-number">02</span><p class="kicker">Interactive evidence</p><h2>Explore the sample results</h2></div>
+        <p id="data-source-note">Showing the verified synthetic sample: 18/18 expected outcomes matched.</p>
+      </div>
+
+      <div class="explorer-shell">
+        <div class="view-tabs" role="tablist" aria-label="Result type">
+          <button class="view-tab active" id="scenario-tab" role="tab" aria-selected="true" data-view="scenarios">Access scenarios <span>18</span></button>
+          <button class="view-tab" id="audit-tab" role="tab" aria-selected="false" data-view="audit">Account audit <span>8</span></button>
+        </div>
+        <div class="toolbar">
+          <label class="search-box"><span aria-hidden="true">⌕</span><span class="sr-only">Search results</span><input id="result-search" type="search" placeholder="Search identity, resource or reason"></label>
+          <div class="filters" id="decision-filters" aria-label="Filter by decision">
+            <button class="filter active" data-filter="ALL">All</button>
+            <button class="filter" data-filter="ALLOW">Allow</button>
+            <button class="filter" data-filter="CONDITIONAL">Conditional</button>
+            <button class="filter" data-filter="DENY">Deny</button>
+          </div>
+          <button class="reset-button" id="reset-sample" type="button" hidden>Reset sample</button>
+        </div>
+        <div class="results-summary"><span id="visible-count">18 results</span><span id="active-filter-label">All decisions</span></div>
+        <div class="result-list" id="result-list" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section class="section checks-section" id="checks">
+      <div class="section-heading">
+        <div><span class="section-number">03</span><p class="kicker">Transparent policy</p><h2>Ten checks across five categories</h2></div>
+        <p>The check catalog turns a broad Zero Trust idea into explainable request-time decisions.</p>
+      </div>
+      <div class="check-grid" id="check-grid"></div>
+    </section>
+
+    <section class="section run-section" id="run">
+      <div class="run-copy"><span class="section-number">04</span><p class="kicker">Try it locally</p><h2>Run the same demonstration</h2><p>The website explains the output. The Python CLI remains the source of policy decisions and never changes real accounts.</p></div>
+      <div class="command-stack">
+        <div class="command-card"><div><span>Evaluate requests</span><button class="copy-button" data-copy="zta partner evaluate --input examples/partner_access.json --as-of 2026-10-21">Copy</button></div><code>zta partner evaluate --input examples/partner_access.json --as-of 2026-10-21</code></div>
+        <div class="command-card"><div><span>Audit accounts</span><button class="copy-button" data-copy="zta partner audit --input examples/partner_access.json --as-of 2026-10-21 --output json">Copy</button></div><code>zta partner audit --input examples/partner_access.json --as-of 2026-10-21 --output json</code></div>
+      </div>
+    </section>
+
+    <section class="boundary">
+      <span class="boundary-icon" aria-hidden="true">◎</span>
+      <div><p class="kicker">Prototype boundary</p><h2>Visual evidence, not production enforcement</h2><p>This site uses synthetic results. ZTA Guard does not connect to IAM, HR, MDM, network or monitoring systems, and it cannot provision, disable or revoke accounts or sessions.</p></div>
+    </section>
+  </main>
+
+  <footer><div class="brand footer-brand"><span class="brand-mark" aria-hidden="true">Z</span><span><strong>ZTA Guard</strong><small>University prototype</small></span></div><p>Built to make policy decisions easier to inspect and explain.</p><a href="https://github.com/AryanPawr/zta-guard" target="_blank" rel="noreferrer">GitHub repository ↗</a></footer>
+
+  <template id="result-template">
+    <article class="result-card">
+      <button class="result-main" type="button" aria-expanded="false">
+        <span class="result-icon"></span>
+        <span class="result-identity"><strong></strong><small></small></span>
+        <span class="result-resource"></span>
+        <span class="result-check"></span>
+        <span class="result-status status"></span>
+        <span class="chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div class="result-detail" hidden><div><span>Why</span><p class="detail-reason"></p></div><div><span>Matched policy</span><p class="detail-policy"></p></div><div><span>Recommended action</span><p class="detail-action"></p></div></div>
+    </article>
+  </template>
+  <script src="app.js"></script>
+</body>
+</html>

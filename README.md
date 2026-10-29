@@ -10,6 +10,8 @@ ZTA Guard is a Python CLI for lightweight Zero Trust Architecture checks. Its ex
 
 It also includes a limited, synthetic contractor and delivery-partner access prototype. This focused extension demonstrates the project's D3 policy/access model, D4 prototype, and D5 scenario evaluation in response to the Week 6 lifecycle-control priority. It is evidence for the wider 10-week architecture project; it does not replace the current-state assessment, target architecture, implementation priorities, roadmap, report, or presentation.
 
+Explore the results visually in the [ZTA Guard Partner Access Lab](https://aryanpawr.github.io/zta-guard/). The dashboard is a static, read-only companion to the Python CLI: it explains the included sample and can visualize locally selected CLI JSON reports without uploading them to a server.
+
 The tool reports metadata-rich findings by severity and ZTA category, calculates an exposure-aware weighted score, renders a Rich terminal summary for humans, can emit JSON for CI/CD, and can export Prometheus-compatible metrics for automation.
 
 ## Install
